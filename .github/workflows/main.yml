@@ -1,0 +1,55 @@
+name: Changelog Update
+
+on:
+  push:
+    branches:
+      - 'dev-*'
+
+jobs:
+  update-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update Module Changelogs
+        run: |
+          # Ottieni l'elenco dei file modificati nell'ultimo commit
+          CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r ${{ github.sha }})
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          CURRENT_DATE=$(date +'%Y-%m-%d')
+          
+          # Estrai le directory dei moduli (primo livello della repo o sottocartelle se strutturate)
+          MODES_TO_UPDATE=$(echo "$CHANGED_FILES" | grep '/' | cut -d'/' -f1 | uniq)
+
+          for MODULE in $MODES_TO_UPDATE; do
+            # Verifica se la cartella è effettivamente un modulo Odoo (contiene __manifest__.py)
+            if [ -f "$MODULE/__manifest__.py" ]; then
+              CHANGELOG_PATH="$MODULE/CHANGELOG.md"
+              ENTRY="- **$CURRENT_DATE**: $COMMIT_MSG"
+              
+              echo "Aggiornamento changelog per il modulo: $MODULE"
+
+              if [ ! -f "$CHANGELOG_PATH" ]; then
+                # Crea il file se non esiste
+                echo -e "# Changelog\n\n$ENTRY" > "$CHANGELOG_PATH"
+              else
+                # Inserisce dopo l'intestazione (# Changelog) ma come primo elemento della lista
+                # Utilizziamo sed per inserire dopo la riga che contiene l'intestazione principale
+                sed -i "/# Changelog/a \ \n$ENTRY" "$CHANGELOG_PATH"
+                # Rimuove eventuali righe vuote doppie create dal comando sopra
+                sed -i '/^$/N;/^\n$/D' "$CHANGELOG_PATH"
+              fi
+            fi
+          done
+
+      - name: Commit and Push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          # Evita l'errore se non ci sono modifiche effettive al changelog
+          git diff-quiet && git diff --staged --quiet || git commit -m "chore: update changelog [skip ci]"
+          git push
